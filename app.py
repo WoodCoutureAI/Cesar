@@ -544,9 +544,6 @@ def main():
                     
                     if result['Website']:
                         st.markdown(f"**Website:** {result['Website']}")
-                    
-                    if result['Phone']:
-                        st.markdown(f"**Phone:** {result['Phone']}")
                         
                     if result['Location']:
                         st.markdown(f"**Location:** {result['Location']}")
