@@ -1,6 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
-from readability import Document 
+from readability import Document    # type: ignore
 import re
 from urllib.parse import urljoin
 import openai
@@ -534,57 +534,25 @@ def main():
             with col2:
                 st.subheader("Search Results")
             
-            # Create a DataFrame for basic info
-            basic_data = []
-            for r in st.session_state.general_search_results:
-                basic_data.append({
-                    'Company': r.get('Company', ''),
-                    'Website': r.get('Website', ''),
-                    'LinkedIn': r.get('LinkedIn', ''),
-                    'Email': r.get('Email', ''),
-                    'Phone': r.get('Phone', '')
-                })
-            
-            basic_df = pd.DataFrame(basic_data)
-            st.dataframe(basic_df, use_container_width=True)
-            
             # Display detailed results
             for i, result in enumerate(st.session_state.general_search_results):
-                with st.expander(f"📋 {result['Company']} - Detailed Information"):
-                    col1, col2 = st.columns(2)
+                with st.expander(f"�� {result['Company']}"):
+                    st.markdown(f"**Company:** {result['Company']}")
                     
-                    with col1:
-                        st.markdown("### Contact Information")
-                        if result['Website']:
-                            st.markdown(f"🌐 **Website**: [{result['Website']}]({result['Website']})")
-                        
-                        if result['LinkedIn']:
-                            st.markdown(f"👔 **LinkedIn**: [{result['LinkedIn']}]({result['LinkedIn']})")
-                            
-                        if result['Phone']:
-                            st.markdown(f"📞 **Phone**: {result['Phone']}")
-                            
-                        if result['Email']:
-                            st.markdown(f"📧 **Email**: {result['Email']}")
-                            
-                        if result['Location']:
-                            st.markdown(f"📍 **Location**: {result['Location']}")
-                        
-                        # Display all emails if more than one
-                        if 'All_Emails' in result and result['All_Emails'] and len(result['All_Emails']) > 1:
-                            st.markdown("#### All Email Addresses")
-                            for email in result['All_Emails']:
-                                st.markdown(f"- {email}")
-                                
-                        # Display all phone numbers if more than one
-                        if 'All_Phones' in result and result['All_Phones'] and len(result['All_Phones']) > 1:
-                            st.markdown("#### All Phone Numbers")
-                            for phone in result['All_Phones']:
-                                st.markdown(f"- {phone}")
+                    if result['LinkedIn']:
+                        st.markdown(f"**LinkedIn:** {result['LinkedIn']}")
                     
-                    with col2:
-                        st.markdown("### Company Summary")
-                        st.markdown(result['Summary'])
+                    if result['Website']:
+                        st.markdown(f"**Website:** {result['Website']}")
+                    
+                    if result['Phone']:
+                        st.markdown(f"**Phone:** {result['Phone']}")
+                        
+                    if result['Location']:
+                        st.markdown(f"**Location:** {result['Location']}")
+                    
+                    st.markdown("**Summary:**")
+                    st.markdown(result['Summary'])
             
             # Add "Load More" button if we have search parameters
             if st.session_state.search_params:
@@ -649,38 +617,23 @@ def main():
             # Display company card
             col1, col2 = st.columns(2)
             
-            with col1:
-                st.markdown("### Contact Information")
-                if result['Website']:
-                    st.markdown(f"🌐 **Website**: [{result['Website']}]({result['Website']})")
-                
-                if result['LinkedIn']:
-                    st.markdown(f"👔 **LinkedIn**: [{result['LinkedIn']}]({result['LinkedIn']})")
-                    
-                if result['Phone']:
-                    st.markdown(f"📞 **Phone**: {result['Phone']}")
-                    
-                if result['Email']:
-                    st.markdown(f"📧 **Email**: {result['Email']}")
-                    
-                if result['Location']:
-                    st.markdown(f"📍 **Location**: {result['Location']}")
-                
-                # Display all emails if more than one
-                if 'All_Emails' in result and result['All_Emails'] and len(result['All_Emails']) > 1:
-                    st.markdown("#### All Email Addresses")
-                    for email in result['All_Emails']:
-                        st.markdown(f"- {email}")
-                        
-                # Display all phone numbers if more than one
-                if 'All_Phones' in result and result['All_Phones'] and len(result['All_Phones']) > 1:
-                    st.markdown("#### All Phone Numbers")
-                    for phone in result['All_Phones']:
-                        st.markdown(f"- {phone}")
+            # Replace the two-column layout with a simpler format
+            st.markdown(f"**Company:** {result['Company']}")
             
-            with col2:
-                st.markdown("### Company Summary")
-                st.markdown(result['Summary'])
+            if result['LinkedIn']:
+                st.markdown(f"**LinkedIn:** {result['LinkedIn']}")
+            
+            if result['Website']:
+                st.markdown(f"**Website:** {result['Website']}")
+            
+            if result['Phone']:
+                st.markdown(f"**Phone:** {result['Phone']}")
+                
+            if result['Location']:
+                st.markdown(f"**Location:** {result['Location']}")
+            
+            st.markdown("**Summary:**")
+            st.markdown(result['Summary'])
     
     # Footer
     st.markdown("---")
