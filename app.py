@@ -469,8 +469,8 @@ def main():
         col3, col4 = st.columns(2)
         with col3:
             max_results = st.number_input("Maximum Results", min_value=1, max_value=50, value=5)
-        with col4:
-            offset = st.number_input("Search Offset", min_value=0, max_value=100, value=0, step=10)
+        # with col4:
+        #     offset = st.number_input("Search Offset", min_value=0, max_value=100, value=0, step=10)
         
         default_search_terms = [
             "Luxury wood furniture manufacturer",
@@ -478,7 +478,7 @@ def main():
             "Custom wood furniture manufacturer"
         ]
         
-        custom_terms = st.text_area("Custom Search Terms (one per line, leave empty to use defaults)", "")
+        # custom_terms = st.text_area("Custom Search Terms (one per line, leave empty to use defaults)", "")
         search_terms = default_search_terms
         if custom_terms.strip():
             search_terms = [term for term in custom_terms.strip().split("\n") if term.strip()]
