@@ -462,7 +462,7 @@ def main():
         
         col1, col2 = st.columns(2)
         with col1:
-            country = st.text_input("Country", "Italy")
+            country = st.text_input("Country", "China")
         with col2:
             requirements = st.text_input("Specific Requirements (optional)", "")
             
