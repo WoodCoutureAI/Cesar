@@ -480,8 +480,8 @@ def main():
         
         # custom_terms = st.text_area("Custom Search Terms (one per line, leave empty to use defaults)", "")
         search_terms = default_search_terms
-        if custom_terms.strip():
-            search_terms = [term for term in custom_terms.strip().split("\n") if term.strip()]
+        # if custom_terms.strip():
+        #     search_terms = [term for term in custom_terms.strip().split("\n") if term.strip()]
         
         # Initialize session state for storing results
         if 'general_search_results' not in st.session_state:
