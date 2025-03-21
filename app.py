@@ -1,6 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
-from readability import Document    # type: ignore
+from readability import Document 
 import re
 from urllib.parse import urljoin
 import openai
