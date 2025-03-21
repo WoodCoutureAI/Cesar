@@ -6,10 +6,20 @@ import pandas as pd
 import io
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
+try:
+    from readability import Document  # For extracting main content from webpages
+except ImportError:
+    st.error("Please install python-readability: pip install readability-lxml")
+import openai
 
 # Set API keys from Streamlit secrets
 # This will use secrets.toml in local development and deployed environment variables in production
 SERPER_API_KEY = st.secrets.get("SERPER_API_KEY", None)
+OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", None)
+
+# Configure OpenAI if API key is available
+if OPENAI_API_KEY:
+    openai.api_key = OPENAI_API_KEY
 
 # Set page config
 st.set_page_config(
@@ -66,92 +76,313 @@ def is_valid_company_result(website_url):
         
     return not any(excluded in website_url.lower() for excluded in IGNORED_DOMAINS)
 
-def extract_contact_info_from_website(website_url):
+def is_aggregator_title(title):
     """
-    Extract contact information directly from a company's website.
+    Check if a title indicates an aggregator page.
     
     Args:
-        website_url (str): URL of the company website
+        title (str): Page title to check
         
     Returns:
-        tuple: (email, phone, location) extracted from the website
+        bool: True if title suggests an aggregator/list page
     """
-    if not website_url:
-        return None, None, None
-        
-    try:
-        response = requests.get(website_url, timeout=10)
-        if response.status_code != 200:
-            return None, None, None
+    blacklist_keywords = ['top', 'best', 'guide', 'list', 'review', 'directory']
+    return any(kw.lower() in title.lower() for kw in blacklist_keywords)
 
-        # Parse the main homepage
-        main_html = response.text
-        soup = BeautifulSoup(main_html, "html.parser")
+def extract_manufacturer_info(company_name):
+    """
+    Extract basic details (LinkedIn and official website) filtering out aggregator pages.
+    
+    Args:
+        company_name (str): Name of the company to search for
         
-        # Look for a potential contact page link using keywords
-        contact_page_url = None
-        contact_keywords = ["contact", "contact us", "get in touch", "reach us", "support"]
-        for a in soup.find_all("a", href=True):
-            link_text = a.get_text(strip=True).lower()
-            href = a["href"].lower()
-            if any(keyword in link_text for keyword in contact_keywords) or any(keyword in href for keyword in contact_keywords):
-                contact_page_url = a["href"]
-                # If it's a relative URL, join it with the main URL
-                if contact_page_url.startswith("/"):
-                    contact_page_url = urljoin(website_url, contact_page_url)
+    Returns:
+        tuple: (linkedin_url, website_url) extracted from search results
+    """
+    # Find LinkedIn URL
+    linkedin_url = None
+    linkedin_query = f"{company_name} LinkedIn"
+    linkedin_results = google_search(linkedin_query)
+    if 'organic' in linkedin_results:
+        for result in linkedin_results['organic']:
+            if "linkedin.com/company/" in result.get('link', ''):
+                linkedin_url = result['link']
                 break
+    
+    # Find company website
+    website_url = None
+    website_query = f"{company_name} official website"
+    website_results = google_search(website_query)
+    if 'organic' in website_results:
+        for result in website_results['organic']:
+            title = result.get('title', '')
+            # Skip aggregator pages
+            if is_aggregator_title(title):
+                continue
+            potential_url = result.get('link')
+            if potential_url and is_valid_company_result(potential_url):
+                website_url = potential_url
+                break
+    
+    return linkedin_url, website_url
 
-        # If a contact page is found, fetch and parse it
-        if contact_page_url:
-            contact_response = requests.get(contact_page_url, timeout=10)
-            if contact_response.status_code == 200:
-                soup = BeautifulSoup(contact_response.text, "html.parser")
-
-        # Get the full text from the (contact) page
-        full_text = soup.get_text(separator=" ", strip=True)
+def get_website_content(website_url, timeout=20, retries=3):
+    """
+    Fetch HTML content using a custom User-Agent, timeout, and retries.
+    
+    Args:
+        website_url (str): URL to fetch content from
+        timeout (int): Request timeout in seconds
+        retries (int): Number of retry attempts
         
-        # --- EMAIL EXTRACTION ---
-        email = None
-        mailto_link = soup.find("a", href=lambda href: href and href.lower().startswith("mailto:"))
-        if mailto_link:
-            email = mailto_link.get("href").replace("mailto:", "").strip()
-        if not email:
-            email_matches = re.findall(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", full_text)
-            email = email_matches[0] if email_matches else None
+    Returns:
+        str: HTML content or empty string if failed
+    """
+    headers = {
+        "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) "
+                       "Chrome/114.0.0.0 Safari/537.36")
+    }
+    session = requests.Session()
+    session.headers.update(headers)
+    for attempt in range(1, retries + 1):
+        try:
+            response = session.get(website_url, timeout=timeout)
+            if response.status_code == 200:
+                return response.text
+            else:
+                if attempt == retries:
+                    st.warning(f"Failed to fetch {website_url} with status code {response.status_code}")
+        except requests.exceptions.RequestException as e:
+            if attempt == retries:
+                st.warning(f"Error fetching {website_url}: {e}")
+    return ""
 
-        # PHONE NUMBER EXTRACTION 
-        phone = None
-        tel_link = soup.find("a", href=lambda href: href and href.lower().startswith("tel:"))
-        if tel_link:
-            phone = tel_link.get("href").replace("tel:", "").strip()
-        if not phone:
-            phone_matches = re.findall(r'\+?\d[\d\s\-\(\)]{7,}\d', full_text)
-            phone = phone_matches[0] if phone_matches else None
+def extract_main_content(html):
+    """
+    Extract main content from HTML using readability (fallback to BeautifulSoup).
+    
+    Args:
+        html (str): HTML content to extract from
+        
+    Returns:
+        str: Main content text
+    """
+    try:
+        # Use readability if available
+        doc = Document(html)
+        summary_html = doc.summary()
+        soup = BeautifulSoup(summary_html, "html.parser")
+        return soup.get_text(separator=" ", strip=True)
+    except Exception as e:
+        # Fall back to standard BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        return soup.get_text(separator=" ", strip=True)
 
-        # LOCATION EXTRACTION 
-        location = None
-        address_tag = soup.find("address")
-        if address_tag:
-            location = address_tag.get_text(separator=" ", strip=True)
-        if not location:
-            # Attempt to extract text following the word "Address"
-            loc_match = re.search(r"Address[:\s]*([A-Za-z0-9,\s\-]+?)(?=\s*(Call us|Email|$))", full_text, re.IGNORECASE)
+def extract_contact_details(html):
+    """
+    Extract contact details from HTML using multiple methods.
+    
+    Args:
+        html (str): HTML content to extract from
+        
+    Returns:
+        dict: Dictionary with email, phone and address information
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    full_text = soup.get_text(separator=" ", strip=True)
+    
+    # Email extraction
+    emails = set()
+    # Look for mailto links
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if href.startswith("mailto:"):
+            email = href.split("mailto:")[1].split("?")[0].strip()
+            if email:
+                emails.add(email)
+    
+    # Fallback: Use regex to find email patterns in the entire HTML
+    email_regex = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
+    found_emails = re.findall(email_regex, html)
+    for email in found_emails:
+        emails.add(email)
+    
+    # Phone extraction
+    phones = set()
+    # Look for tel links
+    tel_links = soup.find_all("a", href=lambda href: href and href.lower().startswith("tel:"))
+    for tel_link in tel_links:
+        phone = tel_link.get("href").replace("tel:", "").strip()
+        if phone:
+            phones.add(phone)
+    
+    # Use regex to find phone patterns
+    phone_matches = re.findall(r'\+?\d[\d\s\-\(\)]{7,}\d', full_text)
+    for phone in phone_matches:
+        phones.add(phone)
+    
+    # Location extraction
+    location = None
+    address_tag = soup.find("address")
+    if address_tag:
+        location = address_tag.get_text(separator=" ", strip=True)
+    if not location:
+        # Attempt to extract text following the word "Address"
+        loc_match = re.search(r"Address[:\s]*([A-Za-z0-9,\s\-]+?)(?=\s*(Call us|Email|$))", full_text, re.IGNORECASE)
+        if loc_match:
+            location = loc_match.group(1).strip()
+        else:
+            loc_match = re.search(r"Address[:\s]*([A-Za-z0-9,\s\-]+)", full_text, re.IGNORECASE)
             if loc_match:
                 location = loc_match.group(1).strip()
-            else:
-                loc_match = re.search(r"Address[:\s]*([A-Za-z0-9,\s\-]+)", full_text, re.IGNORECASE)
-                if loc_match:
-                    location = loc_match.group(1).strip()
+    
+    return {
+        "emails": list(emails),
+        "phones": list(phones),
+        "location": location
+    }
 
-        return email, phone, location
+def find_relevant_links(home_html, base_url, keywords):
+    """
+    Find anchor tags in the homepage whose text contains any given keywords.
+    
+    Args:
+        home_html (str): HTML content of the homepage
+        base_url (str): Base URL for resolving relative links
+        keywords (list): List of keywords to search for in link text
+        
+    Returns:
+        dict: Dictionary mapping keywords to their URLs
+    """
+    soup = BeautifulSoup(home_html, "html.parser")
+    links = {}
+    for a in soup.find_all("a", href=True):
+        link_text = a.get_text().strip().lower()
+        href = a['href']
+        for kw in keywords:
+            if kw in link_text and kw not in links:
+                full_url = urljoin(base_url, href)
+                links[kw] = full_url
+    return links
 
+def scrape_manufacturer_website(website_url):
+    """
+    Scrape homepage and related pages (About, Products, Contact, etc.) and combine content.
+    
+    Args:
+        website_url (str): URL of the manufacturer's website
+        
+    Returns:
+        dict: Dictionary with extracted content from various pages and contact details
+    """
+    if not website_url:
+        return {"content": "", "contact_details": {}}
+    
+    homepage_html = get_website_content(website_url)
+    if not homepage_html:
+        return {"content": "", "contact_details": {}}
+    
+    homepage_content = extract_main_content(homepage_html)
+    homepage_contact = extract_contact_details(homepage_html)
+    
+    keywords = ['about', 'products', 'contact', 'contact us', 'services', 'portfolio', 'get in touch']
+    relevant_links = find_relevant_links(homepage_html, website_url, keywords)
+    
+    extracted_content = {"Homepage": homepage_content}
+    contact_details = homepage_contact
+    
+    for key, link in relevant_links.items():
+        page_html = get_website_content(link)
+        if page_html:
+            page_content = extract_main_content(page_html)
+            extracted_content[key.capitalize()] = page_content
+            
+            # If this page is a contact page, also extract contact details
+            if "contact" in key.lower():
+                page_contact = extract_contact_details(page_html)
+                # Merge contact details
+                contact_details["emails"] = list(set(contact_details.get("emails", []) + page_contact.get("emails", [])))
+                contact_details["phones"] = list(set(contact_details.get("phones", []) + page_contact.get("phones", [])))
+                if not contact_details.get("location") and page_contact.get("location"):
+                    contact_details["location"] = page_contact["location"]
+    
+    # Format as dictionary
+    combined_content = ""
+    for section, content in extracted_content.items():
+        combined_content += f"\n--- {section} ---\n{content}\n"
+    
+    return {
+        "content": combined_content,
+        "contact_details": contact_details
+    }
+
+def generate_manufacturer_summary(company_name, extracted_content):
+    """
+    Generate a detailed manufacturer summary using OpenAI.
+    
+    Args:
+        company_name (str): Company name
+        extracted_content (str): Extracted website content
+        
+    Returns:
+        str: Detailed company summary
+    """
+    # If OpenAI API key is not available, return a simplified summary
+    if not OPENAI_API_KEY:
+        # Return a simplified version
+        summary = f"Information about {company_name}"
+        if len(extracted_content) > 500:
+            summary += ": " + extracted_content[:500] + "..."
+        else:
+            summary += ": " + extracted_content
+        return summary
+    
+    # Format the prompt
+    prompt = f"""
+    You are a fine-tuned business research assistant. Based on the following extracted website content from '{company_name}', generate a detailed summary that includes:
+    
+    - Company Size
+    - Years in Business
+    - Types of Products
+    - Client Portfolio
+    - Industry Certifications
+    - Manufacturing Capabilities
+    - Quality Standards
+    - Export Information
+
+    Use the information provided only in the text below and do not add any invented details.
+    If some information is not available, simply omit that section.
+    
+    Extracted Content:
+    {extracted_content}
+
+    Please output the final summary in a clear, professional, and structured manner.
+    """
+    
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",  # Using a more affordable model
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=750,
+            temperature=0.7,
+        )
+        summary = response.choices[0].message.content.strip()
+        return summary
     except Exception as e:
-        st.error(f"Error fetching website details from {website_url}: {e}")
-        return None, None, None
+        st.error(f"Error generating summary with OpenAI: {e}")
+        # Fallback to a basic summary
+        summary = f"Information about {company_name}"
+        if len(extracted_content) > 500:
+            summary += ": " + extracted_content[:500] + "..."
+        else:
+            summary += ": " + extracted_content
+        return summary
 
 def extract_company_summary_from_search(company_name):
     """
     Extract a summary about the company from search results.
+    Used as a fallback if scraping and OpenAI summary generation fails.
     
     Args:
         company_name (str): Company name to search for
@@ -159,7 +390,6 @@ def extract_company_summary_from_search(company_name):
     Returns:
         str: Summary text about the company
     """
-    # First try to get company overview
     query = f"{company_name} company about overview"
     search_results = google_search(query)
     
@@ -176,9 +406,9 @@ def extract_company_summary_from_search(company_name):
         results = google_search(query)
         if 'organic' in results:
             # Extract snippets from search results
-            for result in results['organic'][:3]:  #
+            for result in results['organic'][:3]:
                 snippet = result.get('snippet', '')
-                if snippet and len(snippet) > 50:  # 
+                if snippet and len(snippet) > 50:
                     # Clean up the snippet
                     cleaned_snippet = re.sub(r'\s+', ' ', snippet).strip()
                     if cleaned_snippet not in summary_texts:  # Avoid duplicates
@@ -222,9 +452,43 @@ def find_linkedin_url(company_name):
     
     return None
 
+def extract_linkedin_details(linkedin_url):
+    """
+    Extract details from a company's LinkedIn profile.
+    
+    Args:
+        linkedin_url (str): LinkedIn URL to scrape
+        
+    Returns:
+        dict: Dictionary with extracted LinkedIn details
+    """
+    if not linkedin_url:
+        return {"phone": None, "location": None}
+        
+    try:
+        html = get_website_content(linkedin_url)
+        if not html:
+            return {"phone": None, "location": None}
+            
+        soup = BeautifulSoup(html, "html.parser")
+        text = soup.get_text(separator=" ", strip=True)
+        
+        # Try to find phone number
+        phone_match = re.search(r'(\+?\d[\d\s\-]{7,}\d)', text)
+        phone = phone_match.group(1) if phone_match else None
+        
+        # Try to find location
+        location_match = re.search(r'Location\s*[:\-]?\s*([A-Za-z0-9,\s\-]+)', text)
+        location = location_match.group(1).strip() if location_match else None
+        
+        return {"phone": phone, "location": location}
+    except Exception as e:
+        st.warning(f"Error extracting LinkedIn details: {e}")
+        return {"phone": None, "location": None}
+
 def search_specific_company(company_name):
     """
-    Search for information about a specific company.
+    Search for detailed information about a specific company.
     
     Args:
         company_name (str): Name of the company to search
@@ -233,26 +497,35 @@ def search_specific_company(company_name):
         dict: Company information including contact details and summary
     """
     with st.spinner(f"Searching for information about {company_name}..."):
-        # Find company website
-        website_query = f"{company_name} official website"
-        website_results = google_search(website_query)
-        website_url = None
+        # Get company website and LinkedIn URLs using the new helper function
+        linkedin_url, website_url = extract_manufacturer_info(company_name)
         
-        if 'organic' in website_results:
-            for result in website_results['organic']:
-                potential_url = result.get('link')
-                if potential_url and is_valid_company_result(potential_url):
-                    website_url = potential_url
-                    break
+        # Scrape the manufacturer's website
+        st.info(f"Scraping website content for {company_name}...")
+        scraped_data = scrape_manufacturer_website(website_url)
         
-        # Find LinkedIn profile
-        linkedin_url = find_linkedin_url(company_name)
+        # Extract LinkedIn details
+        linkedin_details = extract_linkedin_details(linkedin_url)
         
-        # Extract contact information from website
-        email, phone_number, location = extract_contact_info_from_website(website_url)
+        # Generate company summary using OpenAI if available
+        if scraped_data["content"]:
+            st.info("Generating detailed company summary...")
+            summary = generate_manufacturer_summary(company_name, scraped_data["content"])
+        else:
+            # Fallback to search-based summary
+            summary = extract_company_summary_from_search(company_name)
         
-        # Get company summary from search results
-        summary = extract_company_summary_from_search(company_name)
+        # Consolidate contact details from website and LinkedIn
+        contact_details = scraped_data["contact_details"]
+        email = contact_details.get("emails", [None])[0] if contact_details.get("emails") else None
+        phone_number = contact_details.get("phones", [None])[0] if contact_details.get("phones") else None
+        location = contact_details.get("location")
+        
+        # If no phone/location from website, use LinkedIn data
+        if not phone_number and linkedin_details.get("phone"):
+            phone_number = linkedin_details["phone"]
+        if not location and linkedin_details.get("location"):
+            location = linkedin_details["location"]
         
         return {
             "company_name": company_name,
@@ -261,7 +534,9 @@ def search_specific_company(company_name):
             "phone_number": phone_number,
             "email": email,
             "location": location,
-            "summary": summary
+            "summary": summary,
+            "all_emails": contact_details.get("emails", []),
+            "all_phones": contact_details.get("phones", [])
         }
 
 def search_multiple_companies(country, search_terms, additional_requirements="", offset=0, max_results=20, existing_companies=None):
@@ -299,6 +574,10 @@ def search_multiple_companies(country, search_terms, additional_requirements="",
             company_name = result.get('title')
             website_url = result.get('link')
             
+            # Skip aggregator pages
+            if is_aggregator_title(company_name):
+                continue
+            
             # Strip common suffixes from company names for cleaner results
             if company_name:
                 company_name = re.sub(r' - .*$', '', company_name)
@@ -311,14 +590,38 @@ def search_multiple_companies(country, search_terms, additional_requirements="",
             if company_name not in companies:
                 status_text.write(f"Processing: {company_name}")
                 
-                # Extract contact info from website
-                email, phone_number, location = extract_contact_info_from_website(website_url)
+                # Get LinkedIn URL using the helper function instead of separate search
+                linkedin_url, better_website_url = extract_manufacturer_info(company_name)
                 
-                # Find LinkedIn URL
-                linkedin_url = find_linkedin_url(company_name)
+                # Use the better website URL if available
+                if better_website_url:
+                    website_url = better_website_url
                 
-                # Get summary from search results
-                summary = extract_company_summary_from_search(company_name)
+                # Scrape the manufacturer's website
+                scraped_data = scrape_manufacturer_website(website_url)
+                
+                # Extract LinkedIn details
+                linkedin_details = extract_linkedin_details(linkedin_url)
+                
+                # Generate company summary
+                summary = ""
+                if scraped_data["content"]:
+                    summary = generate_manufacturer_summary(company_name, scraped_data["content"])
+                else:
+                    # Fallback to search-based summary
+                    summary = extract_company_summary_from_search(company_name)
+                
+                # Consolidate contact details
+                contact_details = scraped_data["contact_details"]
+                email = contact_details.get("emails", [None])[0] if contact_details.get("emails") else None
+                phone_number = contact_details.get("phones", [None])[0] if contact_details.get("phones") else None
+                location = contact_details.get("location")
+                
+                # If no phone/location from website, use LinkedIn data
+                if not phone_number and linkedin_details.get("phone"):
+                    phone_number = linkedin_details["phone"]
+                if not location and linkedin_details.get("location"):
+                    location = linkedin_details["location"]
                 
                 companies[company_name] = {
                     "company_name": company_name,
@@ -327,7 +630,9 @@ def search_multiple_companies(country, search_terms, additional_requirements="",
                     "phone_number": phone_number,
                     "email": email,
                     "location": location,
-                    "summary": summary
+                    "summary": summary,
+                    "all_emails": contact_details.get("emails", []),
+                    "all_phones": contact_details.get("phones", [])
                 }
                 
                 new_companies_count += 1
@@ -353,6 +658,7 @@ def search_multiple_companies(country, search_terms, additional_requirements="",
     status_text.empty()
     return results
 
+
 def export_results_to_excel(results):
     """
     Export search results to Excel file
@@ -372,9 +678,20 @@ def export_results_to_excel(results):
         "phone_number", "email", "location", "summary"
     ]
     
+    # Additional columns if they exist
+    additional_columns = ["all_emails", "all_phones"]
+    for col in additional_columns:
+        if col in df.columns:
+            columns_order.append(col)
+    
     # Make sure we only include columns that exist
     columns_to_use = [col for col in columns_order if col in df.columns]
     df = df[columns_to_use]
+    
+    # Format list columns to improve readability in Excel
+    for col in ["all_emails", "all_phones"]:
+        if col in df.columns:
+            df[col] = df[col].apply(lambda x: ", ".join(x) if isinstance(x, list) else x)
     
     # Create a buffer for the Excel file
     buffer = io.BytesIO()
@@ -406,13 +723,18 @@ def main():
         st.sidebar.error("⚠️ SERPER_API_KEY not found. Please check your secrets.toml file.")
     else:
         st.sidebar.success("✅ SERPER_API_KEY configured")
+        
+    if not OPENAI_API_KEY:
+        st.sidebar.warning("⚠️ OPENAI_API_KEY not found. Advanced summary generation will be disabled.")
+    else:
+        st.sidebar.success("✅ OPENAI_API_KEY configured")
     
     st.sidebar.markdown("---")
     st.sidebar.info("""
     ### About
     Wood Couture Market Scout helps you find and analyze furniture 
-    suppliers or manufacturers worldwide. The tool uses Google search 
-    to extract key information about companies.
+    suppliers or manufacturers worldwide. The tool uses advanced web scraping
+    and AI to extract detailed information about companies.
     """)
     
     # Main content tabs
@@ -520,6 +842,17 @@ def main():
                             st.markdown(f"📧 **Email**: {result['email']}")
                         if result['location']:
                             st.markdown(f"📍 **Location**: {result['location']}")
+                            
+                        # Display all emails and phones if available
+                        if 'all_emails' in result and result['all_emails'] and len(result['all_emails']) > 1:
+                            st.markdown("#### All Email Addresses")
+                            for email in result['all_emails']:
+                                st.markdown(f"- {email}")
+                                
+                        if 'all_phones' in result and result['all_phones'] and len(result['all_phones']) > 1:
+                            st.markdown("#### All Phone Numbers")
+                            for phone in result['all_phones']:
+                                st.markdown(f"- {phone}")
                     
                     with col2:
                         st.markdown("### Company Summary")
@@ -601,6 +934,17 @@ def main():
                     st.markdown(f"📧 **Email**: {result['email']}")
                 if result['location']:
                     st.markdown(f"📍 **Location**: {result['location']}")
+                    
+                # Display all emails and phones if available
+                if 'all_emails' in result and result['all_emails'] and len(result['all_emails']) > 1:
+                    st.markdown("#### All Email Addresses")
+                    for email in result['all_emails']:
+                        st.markdown(f"- {email}")
+                        
+                if 'all_phones' in result and result['all_phones'] and len(result['all_phones']) > 1:
+                    st.markdown("#### All Phone Numbers")
+                    for phone in result['all_phones']:
+                        st.markdown(f"- {phone}")
             
             with col2:
                 st.markdown("### Company Summary")
