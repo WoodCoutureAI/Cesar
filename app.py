@@ -507,7 +507,7 @@ def main():
             results = general_search(
                 country, search_terms, 
                 requirements=requirements, 
-                offset=offset, 
+                offset=0, 
                 max_results=max_results,
                 existing_companies=existing_companies
             )
