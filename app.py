@@ -68,7 +68,7 @@ def extract_main_content(html):
         soup = BeautifulSoup(html, "html.parser")
         return soup.get_text(separator=" ", strip=True)
 
-# extract_contact_details: Extract email addresses from HTML using mailto links and regex.
+# extract_contact_details: Extract email addresses and phone numbers from HTML.
 def extract_contact_details(html):
     emails = set()
     phones = set()
@@ -149,7 +149,7 @@ def scrape_manufacturer_website(website_url):
             combined_content += f"\n--- {section} ---\n{content}\n"
         return combined_content, list(all_emails), list(all_phones)
 
-# Generate_manufacturer_summary_from_content: Pass extracted content to the LLM to generate a detailed summary.
+# Generate_manufacturer_summary_from_content: Use the LLM to generate a detailed summary.
 def generate_manufacturer_summary_from_content(company_name, extracted_content):
     with st.spinner(f"Generating detailed summary for {company_name}..."):
         prompt = f"""
@@ -365,7 +365,7 @@ def general_search(country, search_terms, requirements, max_results, offset=0, e
             phone, location = extract_linkedin_details(linkedin_url)
             
         primary_email = all_emails[0] if all_emails else None
-        primary_phone = all_phones[0] if all_phones else phone
+        primary_phone = all_phones[0] if all_emails else phone
         
         results.append({
             "Company": company_name,
@@ -413,7 +413,7 @@ def specific_company_search(company_name):
         summary = generate_manufacturer_summary_from_content(company_name, extracted_content)
         
         primary_email = all_emails[0] if all_emails else None
-        primary_phone = all_phones[0] if all_phones else phone
+        primary_phone = all_phones[0] if all_emails else phone
         
         return {
             "Company": company_name,
@@ -554,8 +554,8 @@ def main():
             # Add "Load More" button if we have search parameters
             if st.session_state.search_params:
                 if st.button("🔄 Load More Results"):
-                    # Calculate new offset
-                    new_offset = offset + st.session_state.total_results_loaded
+                    # Compute new offset using the total results loaded so far
+                    new_offset = st.session_state.total_results_loaded
                     
                     # Convert existing results to dict for duplicate checking
                     existing_companies = {r['Company']: r for r in st.session_state.general_search_results}
@@ -611,10 +611,7 @@ def main():
             with col2:
                 st.subheader(f"Company Profile: {result['Company']}")
             
-            # Display company card
-            col1, col2 = st.columns(2)
-            
-            # Replace the two-column layout with a simpler format
+            # Display company details
             st.markdown(f"**Company:** {result['Company']}")
             
             if result['LinkedIn']:
