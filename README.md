@@ -1,7 +1,7 @@
-# Wood Couture Market Scout
+# Cesar
 
 ## Overview
-Wood Couture Market Scout is a powerful tool for finding and analyzing furniture suppliers or manufacturers worldwide. It leverages Google search capabilities through the Serper API to extract comprehensive information about companies.
+Wood Couture's Cesar is a powerful tool for finding and analyzing furniture suppliers or manufacturers worldwide. It leverages Google search capabilities through the Serper API to extract comprehensive information about companies.
 
 ## Features
 - **General Search**: Find companies based on country and specific requirements
