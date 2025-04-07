@@ -345,6 +345,7 @@ def general_search(country, search_terms, requirements, max_results, offset=0, e
     results = []
     for i, (company_name, details) in enumerate(manufacturers.items()):
         status_text.text(f"Processing {i+1}/{len(manufacturers)}: {company_name}")
+        status_text.text(f"(max_results)")
         progress_bar.progress((i) / len(manufacturers))
         
         website_url = details.get("Website")
