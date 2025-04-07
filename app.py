@@ -468,8 +468,8 @@ def main():
             requirements = st.text_input("Specific Requirements (optional)", "")
             
         col3, col4 = st.columns(2)
-        with col3:
-            max_results = st.number_input("Maximum Results", min_value=1, max_value=50, value=5)
+        # with col3:
+            # max_results = st.number_input("Maximum Results", min_value=1, max_value=50, value=5)
         # with col4:
         #     offset = st.number_input("Search Offset", min_value=0, max_value=100, value=0, step=10)
         
