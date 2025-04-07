@@ -325,11 +325,11 @@ def general_search(country, search_terms, requirements, max_results, offset=0, e
                     "LinkedIn": linkedin_url
                 }
                 
-            progress_percent = ((i + (j / len(search_results.get('organic', [])))) / len(search_terms) / 2) + 0.5
-            progress_bar.progress(min(progress_percent, 1.0))
-            
             if len(manufacturers) == max_results:
                 break
+                
+            progress_percent = ((i + (j / len(search_results.get('organic', [])))) / len(search_terms) / 2) + 0.5
+            progress_bar.progress(min(progress_percent, 1.0))
                 
         if len(manufacturers) >= max_results:
             break
