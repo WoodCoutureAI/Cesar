@@ -430,8 +430,8 @@ def specific_company_search(company_name):
 # Streamlit UI
 def main():
     # Title and description
-    st.title("🪵 Wood Couture AI Market Scout")
-    st.subheader("Find and analyze wood manufacturer companies worldwide")
+    st.title("🪵 Wood Couture's AI Market Scout")
+    st.subheader("I will help you find and analyze wood manufacturer's worldwide")
     
     # Sidebar with app options and API status
     st.sidebar.title("API Status")
@@ -628,7 +628,7 @@ def main():
     
     # Footer
     st.markdown("---")
-    st.markdown("Created by Wood Couture | AI Market Scout")
+    st.markdown("Created by AI Team | Cesar")
 
 if __name__ == "__main__":
     main()
