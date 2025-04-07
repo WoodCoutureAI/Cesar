@@ -509,7 +509,7 @@ def main():
                 country, search_terms, 
                 requirements=requirements, 
                 offset=0, 
-                max_results=max_results,
+                max_results=30,
                 existing_companies=existing_companies
             )
             
