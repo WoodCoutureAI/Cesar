@@ -51,9 +51,11 @@ def get_website_content(website_url, timeout=20, retries=3):
             if response.status_code == 200:
                 return response.text
             else:
-                # st.warning(f"Attempt {attempt}: Failed to fetch {website_url} with status code {response.status_code}")
+                # Log the error instead of showing a warning
+                print(f"Attempt {attempt}: Failed to fetch {website_url} with status code {response.status_code}")
         except requests.exceptions.RequestException as e:
-            # st.warning(f"Attempt {attempt}: Error fetching {website_url}: {e}")
+            # Log the error instead of showing a warning
+            print(f"Attempt {attempt}: Error fetching {website_url}: {e}")
     return ""
 
 # Extract_main_content: Extract main content from HTML using readability (fallback to BeautifulSoup).
