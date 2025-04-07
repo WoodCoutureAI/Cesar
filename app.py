@@ -51,9 +51,9 @@ def get_website_content(website_url, timeout=20, retries=3):
             if response.status_code == 200:
                 return response.text
             else:
-                st.warning(f"Attempt {attempt}: Failed to fetch {website_url} with status code {response.status_code}")
+                # st.warning(f"Attempt {attempt}: Failed to fetch {website_url} with status code {response.status_code}")
         except requests.exceptions.RequestException as e:
-            st.warning(f"Attempt {attempt}: Error fetching {website_url}: {e}")
+            # st.warning(f"Attempt {attempt}: Error fetching {website_url}: {e}")
     return ""
 
 # Extract_main_content: Extract main content from HTML using readability (fallback to BeautifulSoup).
@@ -64,7 +64,7 @@ def extract_main_content(html):
         soup = BeautifulSoup(summary_html, "html.parser")
         return soup.get_text(separator=" ", strip=True)
     except Exception as e:
-        st.warning(f"Error using readability: {e}")
+        # st.warning(f"Error using readability: {e}")
         soup = BeautifulSoup(html, "html.parser")
         return soup.get_text(separator=" ", strip=True)
 
@@ -187,7 +187,7 @@ def generate_manufacturer_summary_from_content(company_name, extracted_content):
             summary = response['choices'][0]['message']['content'].strip()
             return summary
         except Exception as e:
-            st.warning(f"Error generating summary: {e}")
+            # st.warning(f"Error generating summary: {e}")
             return "Could not generate summary due to API error. Please check your API key or try again later."
 
 # Is_aggregator_title: Check if a title indicates an aggregator page.
