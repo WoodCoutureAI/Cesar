@@ -567,7 +567,7 @@ def main():
                         st.session_state.search_params['search_terms'],
                         requirements=st.session_state.search_params['requirements'],
                         offset=new_offset,
-                        max_results=max_results,
+                        max_results=30,
                         existing_companies=existing_companies
                     )
                     
