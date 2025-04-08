@@ -21,7 +21,7 @@ st.set_page_config(
 SERPER_API_KEY = st.secrets.get("SERPER_API_KEY", None)
 OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", None)
 
-# Google_search: Search SERPER API with a query and offset.
+# google_search: Search SERPER API with a query and offset.
 def google_search(query, offset=0):
     url = "https://google.serper.dev/search"
     headers = {"X-API-KEY": SERPER_API_KEY}
@@ -36,7 +36,8 @@ def google_search(query, offset=0):
         st.error(f"Exception during SERPER API call for query '{query}': {e}")
         return {}
 
-# Get_website_content: Fetch HTML content using a custom User-Agent, timeout, and retries.
+# get_website_content: Fetch HTML content using a custom User-Agent, timeout, and retries.
+# Now includes handling for HTTP 429 responses.
 def get_website_content(website_url, timeout=20, retries=3):
     headers = {
         "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -45,20 +46,24 @@ def get_website_content(website_url, timeout=20, retries=3):
     }
     session = requests.Session()
     session.headers.update(headers)
+    
+    backoff = 5  # start with a 5-second wait on 429 responses
     for attempt in range(1, retries + 1):
         try:
             response = session.get(website_url, timeout=timeout)
             if response.status_code == 200:
                 return response.text
+            elif response.status_code == 429:
+                st.warning(f"Received 429 error from {website_url}. Retrying in {backoff} seconds...")
+                time.sleep(backoff)
+                backoff *= 2  # Exponential backoff
             else:
-                # Log the error instead of showing a warning
                 print(f"Attempt {attempt}: Failed to fetch {website_url} with status code {response.status_code}")
         except requests.exceptions.RequestException as e:
-            # Log the error instead of showing a warning
             print(f"Attempt {attempt}: Error fetching {website_url}: {e}")
     return ""
 
-# Extract_main_content: Extract main content from HTML using readability (fallback to BeautifulSoup).
+# extract_main_content: Extract main content from HTML using readability (fallback to BeautifulSoup).
 def extract_main_content(html):
     try:
         doc = Document(html)
@@ -66,7 +71,6 @@ def extract_main_content(html):
         soup = BeautifulSoup(summary_html, "html.parser")
         return soup.get_text(separator=" ", strip=True)
     except Exception as e:
-        # st.warning(f"Error using readability: {e}")
         soup = BeautifulSoup(html, "html.parser")
         return soup.get_text(separator=" ", strip=True)
 
@@ -100,7 +104,7 @@ def extract_contact_details(html):
         
     return list(emails), list(phones)
 
-# Find_relevant_links: Find anchor tags in the homepage whose text contains any given keywords.
+# find_relevant_links: Find anchor tags in the homepage whose text contains any given keywords.
 def find_relevant_links(home_html, base_url, keywords):
     soup = BeautifulSoup(home_html, "html.parser")
     links = {}
@@ -113,7 +117,7 @@ def find_relevant_links(home_html, base_url, keywords):
                 links[kw] = full_url
     return links
 
-# Scrape_manufacturer_website: Scrape homepage and related pages (About, Products, Contact, etc.) and combine content.
+# scrape_manufacturer_website: Scrape homepage and related pages (About, Products, Contact, etc.) and combine content.
 def scrape_manufacturer_website(website_url):
     with st.spinner(f"Scraping website content from {website_url}..."):
         homepage_html = get_website_content(website_url)
@@ -151,7 +155,7 @@ def scrape_manufacturer_website(website_url):
             combined_content += f"\n--- {section} ---\n{content}\n"
         return combined_content, list(all_emails), list(all_phones)
 
-# Generate_manufacturer_summary_from_content: Use the LLM to generate a detailed summary.
+# generate_manufacturer_summary_from_content: Use the LLM to generate a detailed summary.
 def generate_manufacturer_summary_from_content(company_name, extracted_content):
     with st.spinner(f"Generating detailed summary for {company_name}..."):
         prompt = f"""
@@ -189,15 +193,14 @@ def generate_manufacturer_summary_from_content(company_name, extracted_content):
             summary = response['choices'][0]['message']['content'].strip()
             return summary
         except Exception as e:
-            # st.warning(f"Error generating summary: {e}")
             return "Could not generate summary due to API error. Please check your API key or try again later."
 
-# Is_aggregator_title: Check if a title indicates an aggregator page.
+# is_aggregator_title: Check if a title indicates an aggregator page.
 def is_aggregator_title(title):
     blacklist_keywords = ['top', 'best', 'guide', 'list', 'review']
     return any(kw.lower() in title.lower() for kw in blacklist_keywords)
 
-# Extract_manufacturer_info: Extract basic details (LinkedIn and official website) filtering out aggregator pages.
+# extract_manufacturer_info: Remains for general search. It searches for both LinkedIn and official website.
 def extract_manufacturer_info(company_name):
     with st.spinner(f"Finding web presence for {company_name}..."):
         linkedin_url = None
@@ -221,20 +224,6 @@ def extract_manufacturer_info(company_name):
                     break
         return linkedin_url, website_url
 
-# Extract_linkedin_details: Scrape LinkedIn page to extract phone number and location.
-def extract_linkedin_details(linkedin_url):
-    with st.spinner(f"Extracting details from LinkedIn..."):
-        html = get_website_content(linkedin_url)
-        if not html:
-            return None, None
-        soup = BeautifulSoup(html, "html.parser")
-        text = soup.get_text(separator=" ", strip=True)
-        phone_match = re.search(r'(\+?\d[\d\s\-]{7,}\d)', text)
-        phone = phone_match.group(1) if phone_match else None
-        location_match = re.search(r'Location\s*[:\-]?\s*([A-Za-z0-9,\s\-]+)', text)
-        location = location_match.group(1) if location_match else None
-        return phone, location
-
 # Export results to Excel
 def export_results_to_excel(results):
     with st.spinner("Preparing Excel export..."):
@@ -252,13 +241,10 @@ def export_results_to_excel(results):
                 'Location': r.get('Location', '')
             })
             
-        # Create Excel writer with openpyxl
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            # Write basic info to first sheet
             basic_df = pd.DataFrame(basic_data)
             basic_df.to_excel(writer, sheet_name='Company Summary', index=False)
             
-            # Write detailed info to second sheet
             detailed_data = []
             for r in results:
                 detailed_data.append({
@@ -279,12 +265,11 @@ def export_results_to_excel(results):
         output.seek(0)
         return output
 
-# General search for multiple manufacturers
+# general_search: Search for multiple manufacturers.
 def general_search(country, search_terms, requirements, max_results, offset=0, existing_companies=None):
     if existing_companies is None:
         existing_companies = {}
     
-    # Progress bar
     progress_bar = st.progress(0)
     status_text = st.empty()
     
@@ -315,7 +300,7 @@ def general_search(country, search_terms, requirements, max_results, offset=0, e
                 continue
                 
             if company_name and company_name not in manufacturers and company_name not in existing_companies:
-                status_text.text(f"Analyzing: {company_name}")
+                status_text.text(f"Processing: {company_name}")
                 linkedin_url, official_website = extract_manufacturer_info(company_name)
                 
                 if not official_website:
@@ -347,10 +332,10 @@ def general_search(country, search_terms, requirements, max_results, offset=0, e
     results = []
     for i, (company_name, details) in enumerate(manufacturers.items()):
         status_text.text(f"Processing {i+1}/{len(manufacturers)}: {company_name}")
-        status_text.text(f"{max_results}")
         progress_bar.progress((i) / len(manufacturers))
         
         website_url = details.get("Website")
+        # In general search, we still pick up LinkedIn if available.
         linkedin_url = details.get("LinkedIn")
         
         if not website_url:
@@ -362,8 +347,8 @@ def general_search(country, search_terms, requirements, max_results, offset=0, e
             continue
             
         summary = generate_manufacturer_summary_from_content(company_name, extracted_content)
-        phone, location = None, None
-        
+        # For general search, attempt to extract from LinkedIn if available.
+        phone, location = (None, None)
         if linkedin_url:
             phone, location = extract_linkedin_details(linkedin_url)
             
@@ -389,15 +374,38 @@ def general_search(country, search_terms, requirements, max_results, offset=0, e
     
     return results
 
-# Specific company search
+# extract_linkedin_details: Scrape LinkedIn page to extract phone number and location.
+def extract_linkedin_details(linkedin_url):
+    with st.spinner(f"Extracting details from LinkedIn..."):
+        html = get_website_content(linkedin_url)
+        if not html:
+            return None, None
+        soup = BeautifulSoup(html, "html.parser")
+        text = soup.get_text(separator=" ", strip=True)
+        phone_match = re.search(r'(\+?\d[\d\s\-]{7,}\d)', text)
+        phone = phone_match.group(1) if phone_match else None
+        location_match = re.search(r'Location\s*[:\-]?\s*([A-Za-z0-9,\s\-]+)', text)
+        location = location_match.group(1) if location_match else None
+        return phone, location
+
+# specific_company_search: Now mimics the general search logic by directly finding the official website.
 def specific_company_search(company_name):
     if not company_name:
         st.error("Please enter a company name.")
         return None
         
     with st.spinner(f"Searching for {company_name}..."):
-        linkedin_url, website_url = extract_manufacturer_info(company_name)
-        
+        website_query = f"{company_name} official website"
+        website_results = google_search(website_query)
+        website_url = None
+        if 'organic' in website_results:
+            for result in website_results['organic']:
+                title = result.get('title', '')
+                if is_aggregator_title(title):
+                    continue
+                website_url = result.get('link')
+                if website_url:
+                    break
         if not website_url:
             st.error("Could not find a valid website for the specified company.")
             return None
@@ -408,23 +416,19 @@ def specific_company_search(company_name):
             st.error("Failed to extract content from the website.")
             return None
             
-        phone, location = None, None
-        
-        if linkedin_url:
-            phone, location = extract_linkedin_details(linkedin_url)
-            
+        # Do not extract LinkedIn details in specific search
         summary = generate_manufacturer_summary_from_content(company_name, extracted_content)
         
         primary_email = all_emails[0] if all_emails else None
-        primary_phone = all_phones[0] if all_emails else phone
+        primary_phone = all_phones[0] if all_emails else None
         
         return {
             "Company": company_name,
-            "LinkedIn": linkedin_url,
+            "LinkedIn": None,
             "Website": website_url,
             "Phone": primary_phone,
             "Email": primary_email,
-            "Location": location,
+            "Location": None,
             "All_Emails": all_emails,
             "All_Phones": all_phones,
             "Summary": summary
@@ -432,11 +436,9 @@ def specific_company_search(company_name):
 
 # Streamlit UI
 def main():
-    # Title and description
     st.title("🪵 Wood Couture's AI Market Scout")
     st.subheader("I will help you find and analyze wood manufacturer's worldwide")
     
-    # Sidebar with app options and API status
     st.sidebar.title("API Status")
     
     if not SERPER_API_KEY:
@@ -457,7 +459,6 @@ def main():
     and AI to extract detailed information about companies.
     """)
     
-    # Main content tabs
     tab1, tab2 = st.tabs(["General Search", "Company Search"])
     
     with tab1:
@@ -469,42 +470,29 @@ def main():
         with col2:
             requirements = st.text_input("Specific Requirements (optional)", "")
             
-        col3, col4 = st.columns(2)
-        # with col3:
-            # max_results = st.number_input("Maximum Results", min_value=1, max_value=50, value=5)
-        # with col4:
-        #     offset = st.number_input("Search Offset", min_value=0, max_value=100, value=0, step=10)
-        
         default_search_terms = [
             "Luxury wood furniture manufacturer",
             "Premium wood manufacturing",
             "Custom wood furniture manufacturer"
         ]
         
-        # custom_terms = st.text_area("Custom Search Terms (one per line, leave empty to use defaults)", "")
         search_terms = default_search_terms
-        # if custom_terms.strip():
-        #     search_terms = [term for term in custom_terms.strip().split("\n") if term.strip()]
         
-        # Initialize session state for storing results
         if 'general_search_results' not in st.session_state:
             st.session_state.general_search_results = []
             st.session_state.total_results_loaded = 0
             st.session_state.search_params = None
         
         if st.button("🔍 Search for Companies", type="primary"):
-            # Reset results when starting a new search
             st.session_state.general_search_results = []
             st.session_state.total_results_loaded = 0
             
-            # Store search parameters
             st.session_state.search_params = {
                 'country': country,
                 'search_terms': search_terms,
                 'requirements': requirements
             }
             
-            # Convert existing results to dict for duplicate checking
             existing_companies = {r['Company']: r for r in st.session_state.general_search_results}
             
             results = general_search(
@@ -520,11 +508,9 @@ def main():
                 st.session_state.total_results_loaded = len(results)
                 st.success(f"Found {len(results)} companies matching your criteria")
         
-        # Display results if they exist
         if st.session_state.general_search_results:
             st.markdown("---")
             
-            # Add export button
             col1, col2 = st.columns([1, 4])
             with col1:
                 excel_data = export_results_to_excel(st.session_state.general_search_results)
@@ -537,9 +523,8 @@ def main():
             with col2:
                 st.subheader("Search Results")
             
-            # Display detailed results
             for i, result in enumerate(st.session_state.general_search_results):
-                with st.expander(f"�� {result['Company']}"):
+                with st.expander(f"💡 {result['Company']}"):
                     st.markdown(f"**Company:** {result['Company']}")
                     
                     if result['LinkedIn']:
@@ -554,16 +539,11 @@ def main():
                     st.markdown("**Summary:**")
                     st.markdown(result['Summary'])
             
-            # Add "Load More" button if we have search parameters
             if st.session_state.search_params:
                 if st.button("🔄 Load More Results"):
-                    # Compute new offset using the total results loaded so far
                     new_offset = st.session_state.total_results_loaded
-                    
-                    # Convert existing results to dict for duplicate checking
                     existing_companies = {r['Company']: r for r in st.session_state.general_search_results}
                     
-                    # Search for more results
                     more_results = general_search(
                         st.session_state.search_params['country'],
                         st.session_state.search_params['search_terms'],
@@ -574,7 +554,6 @@ def main():
                     )
                     
                     if more_results:
-                        # Update results and counter
                         st.session_state.general_search_results.extend(more_results)
                         st.session_state.total_results_loaded = len(st.session_state.general_search_results)
                         st.success(f"Found {len(more_results)} additional companies")
@@ -589,19 +568,16 @@ def main():
         if st.button("🔍 Search Company", type="primary"):
             if company_name:
                 result = specific_company_search(company_name)
-                
                 if result:
                     st.session_state.specific_company_result = result
                     st.success(f"Found information for {result['Company']}")
             else:
                 st.error("Please enter a company name.")
                 
-        # Display company result if exists
         if 'specific_company_result' in st.session_state:
             result = st.session_state.specific_company_result
             st.markdown("---")
             
-            # Add export button for single company result
             col1, col2 = st.columns([1, 4])
             with col1:
                 excel_data = export_results_to_excel([st.session_state.specific_company_result])
@@ -614,7 +590,6 @@ def main():
             with col2:
                 st.subheader(f"Company Profile: {result['Company']}")
             
-            # Display company details
             st.markdown(f"**Company:** {result['Company']}")
             
             if result['LinkedIn']:
@@ -629,7 +604,6 @@ def main():
             st.markdown("**Summary:**")
             st.markdown(result['Summary'])
     
-    # Footer
     st.markdown("---")
     st.markdown("Created by AI Team | Cesar")
 
