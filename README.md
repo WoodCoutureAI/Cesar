@@ -14,6 +14,7 @@ Wood Couture's Cesar is a powerful tool for finding and analyzing furniture supp
 ## Requirements
 - Python 3.7+
 - Serper API key (for Google search)
+- OpenAI API key
 
 ## Installation
 
@@ -34,7 +35,7 @@ mkdir -p .streamlit
 touch .streamlit/secrets.toml
 ```
 
-4. Add your Serper API key to the `secrets.toml` file:
+4. Add your Serper API and OpenAI API Key to the `secrets.toml` file:
 ```toml
 SERPER_API_KEY = "your_serper_api_key_here"
 ```
