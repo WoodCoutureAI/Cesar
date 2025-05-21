@@ -10,7 +10,6 @@ import openai
 SERPER_API_KEY = st.secrets.get("SERPER_API_KEY", None)
 OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", None)
 
-
 # Google_search: Search SERPER API with a query and offset.
 def google_search(query, offset=0):
     url = "https://google.serper.dev/search"
@@ -136,6 +135,7 @@ def scrape_manufacturer_website(website_url):
         for section, content in extracted_content.items():
             combined_content += f"\n--- {section} ---\n{content}\n"
         return combined_content, list(all_emails), list(all_phones)
+    
 # generate_manufacturer_summary_from_content: Use the LLM to generate a detailed summary.
 def generate_manufacturer_summary_from_content(company_name, extracted_content):
     with st.spinner(f"Generating detailed summary for {company_name}..."):
@@ -151,7 +151,7 @@ def generate_manufacturer_summary_from_content(company_name, extracted_content):
         - Manufacturing Capabilities
         - Quality Standards
         - Export Information
-        - Contact Details (ensure to include email addresses, phone numbers, and physical addresses if available)
+        - Contact Details (ensure to include email addresses, all phone numbers that are displayed only in the front page, and physical addresses which is a must)
 
         Use the information provided only in the text below and do not add any invented details.
         
@@ -217,7 +217,7 @@ def extract_linkedin_details(linkedin_url):
     location = location_match.group(1) if location_match else None
     return phone, location
 
-# -------------------------- Streamlit UI --------------------------
+# Streamlit UI 
 
 st.title("Wood Couture AI Market Scout")
 st.markdown("""
@@ -231,7 +231,7 @@ search_mode = st.radio("Select Search Mode", ("General Search", "Specific Compan
 if search_mode == "General Search":
     st.header("General Manufacturer Search")
     # Supplier category buttons
-    st.markdown("### Choose Supplier Category")
+    st.markdown("Choose Supplier Category")
     col1, col2, col3, col4 = st.columns(4)
     # Initialize default
     if 'search_terms' not in st.session_state:
@@ -241,7 +241,7 @@ if search_mode == "General Search":
             "Custom wood furniture manufacturer"
         ]
     with col1:
-        if st.button("Bespoke Supplier"):
+        if st.button("Bespoke Furniture Supplier"):
             st.session_state['search_terms'] = [
                 "Luxury wood furniture manufacturer",
                 "Premium wood furniture manufacturing",
@@ -313,8 +313,8 @@ if search_mode == "General Search":
         else:
             for company_name, details in manufacturers.items():
                 st.subheader(f"Manufacturer: {company_name}")
-                st.write(f"**Website:** {details['website_url']}")
-                st.write(f"**LinkedIn:** {details['linkedin_url']}")
+                st.write(f"Website: {details['website_url']}")
+                st.write(f"LinkedIn: {details['linkedin_url']}")
                 with st.spinner(f"Scraping website for {company_name}..."):
                     extracted_content = scrape_manufacturer_website(details['website_url'])
                 if not extracted_content:
@@ -322,7 +322,7 @@ if search_mode == "General Search":
                     continue
                 with st.spinner("Generating summary..."):
                     summary = generate_manufacturer_summary_from_content(company_name, extracted_content)
-                st.text_area("Summary", summary, height=300)
+                st.markdown(summary)
                 st.markdown("---")
 
 elif search_mode == "Specific Company Search":
@@ -335,8 +335,8 @@ elif search_mode == "Specific Company Search":
             if not website_url:
                 st.error("Could not find a valid website for the specified company.")
             else:
-                st.write(f"**Website:** {website_url}")
-                st.write(f"**LinkedIn:** {linkedin_url}")
+                st.write(f"Website: {website_url}")
+                st.write(f"LinkedIn: {linkedin_url}")
                 with st.spinner("Scraping website..."):
                     extracted_content = scrape_manufacturer_website(website_url)
                 if not extracted_content:
@@ -349,7 +349,8 @@ elif search_mode == "Specific Company Search":
                         summary = generate_manufacturer_summary_from_content(specific_company, extracted_content)
                     st.subheader(f"Manufacturer: {specific_company}")
                     #st.write(f"**Phone:** {phone}")
-                    st.write(f"**Location:** {location}")
-                    st.text_area("Summary", summary, height=300)
+                    #st.write(f"Location: {location}")
+                    st.markdown(summary)
+                    st.markdown("---")
         else:
             st.error("No company provided. Please enter a company name.")
