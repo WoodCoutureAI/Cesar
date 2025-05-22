@@ -177,7 +177,7 @@ def generate_manufacturer_summary_from_content(company_name, extracted_content):
         - Manufacturing Capabilities
         - Quality Standards
         - Export Information
-        - Contact Details (ensure to include email addresses, all phone numbers that are displayed only in the front page, and physical addresses which is a must)
+        - Contact Details (ensure to include email addresses, phone numbers, and physical addresses which is a must)
 
         Use the information provided only in the text below and do not add any invented details.
         
