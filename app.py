@@ -63,9 +63,9 @@ def extract_contact_details(html):
     addresses_found = []
 
     soup = BeautifulSoup(html, "html.parser")
-    text = soup.get_text(separator=' ', strip=True)  # Extract full text for regex-based address matching
+    text = soup.get_text(separator=' ', strip=True)
 
-    # Look for mailto links
+    # Emails
     for a in soup.find_all("a", href=True):
         href = a["href"]
         if href.startswith("mailto:"):
@@ -73,31 +73,41 @@ def extract_contact_details(html):
             if email:
                 emails.add(email)
 
-    # Regex to find emails in the raw HTML
-    email_regex = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
-    found_emails = re.findall(email_regex, html)
-    for email in found_emails:
+    # regex in raw HTML (fixed character class)
+    email_regex = r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
+    for email in re.findall(email_regex, html):
         emails.add(email)
 
-    # Extract phone numbers
-    phone_regex = r'(\+?\d[\d\s\-().]{7,}\d)'
-    phone_matches = re.findall(phone_regex, html)
-    for phone in phone_matches:
-        if len(re.sub(r'[\s\-().]+', '', phone)) >= 7:
-            phones.add(phone.strip())
+    # Phones (stricter regex + post-filter)
+    phone_re = re.compile(
+    r'''
+    \+                        # must start with a plus
+    \d{1,3}                    # country code (1–3 digits)
+    (?:[\s\-\(\)]*\d){7,12}    # then 7–12 more digits, possibly separated by spaces/dashes/parens
+    ''',
+    re.VERBOSE
+)
 
-    # Address patterns
-    address_regex_patterns = [
-        r'\d{1,5}\s(?:[A-Za-z]+\s){1,4}(?:Street|St|Road|Rd|Avenue|Ave|Lane|Ln|Drive|Dr|Boulevard|Blvd|Place|Pl|Court|Ct)\.?,?\s*[A-Za-z\s]*,?\s*[A-Z]{2,3}\s*\d{5}(?:-\d{4})?',  # Street, City, State/Zip
-        r'(?:P\.O\.\s*Box|PO\s*Box)\s*\d+',  # P.O. Box
-        r'[A-Za-z\s]+(?:,\s*[A-Za-z\s]+){1,3}(?:,\s*[A-Z]{2,3})?(?:,\s*\d{4,6})?'  # City, State, Country, Postal Code
+    phones = set()
+    for candidate in phone_re.findall(html):
+    # Strip all non-digits/+ and double-check digit count
+        digits = re.sub(r"[^\d+]", "", candidate)
+        if 8 <= len(digits) <= 15:
+            phones.add(candidate.strip())
+
+    # Addresses
+    address_patterns = [
+        r'\d{1,5}\s(?:[A-Za-z]+\s){1,4}'
+        r'(?:Street|St|Road|Rd|Avenue|Ave|Lane|Ln|Drive|Dr|Boulevard|Blvd|Place|Pl|Court|Ct)'
+        r'\.?,?\s*[A-Za-z\s]*,?\s*[A-Z]{2,3}\s*\d{5}(?:-\d{4})?',
+        r'(?:P\.O\.\s*Box|PO\s*Box)\s*\d+',
+        r'[A-Za-z\s]+(?:,\s*[A-Za-z\s]+){1,3}(?:,\s*[A-Z]{2,3})?(?:,\s*\d{4,6})?'
     ]
+    for pat in address_patterns:
+        for match in re.findall(pat, text, re.IGNORECASE):
+            addresses_found.append(match.strip())
 
-    # Extract addresses from plain text
-    for pattern in address_regex_patterns:
-        addresses_found.extend(re.findall(pattern, text, re.IGNORECASE))
-
-    addresses = list(set(addr.strip() for addr in addresses_found if addr.strip()))
+    addresses = list(set(addresses_found))
 
     return list(emails), list(phones), addresses
 
@@ -114,7 +124,7 @@ def find_relevant_links(home_html, base_url, keywords):
                 full_url = urljoin(base_url, href)
                 links[kw] = full_url
     return links
-# scrape_manufacturer_website: Scrape homepage and related pages (About, Products, Contact, etc.) and combine content.
+
 # scrape_manufacturer_website: Scrape homepage and related pages (About, Products, Contact, etc.) and combine content.
 def scrape_manufacturer_website(website_url):
     with st.spinner(f"Scraping website content from {website_url}..."):
@@ -244,7 +254,6 @@ def extract_linkedin_details(linkedin_url):
     return phone, location
 
 # Streamlit UI 
-
 st.title("Wood Couture AI Market Scout")
 st.markdown("""
 I can help you search for and analyze bespoke furniture related manufacturer companies worldwide.
@@ -256,44 +265,62 @@ search_mode = st.radio("Select Search Mode", ("General Search", "Specific Compan
 
 if search_mode == "General Search":
     st.header("General Manufacturer Search")
-    # Supplier category buttons
-    st.markdown("Choose Supplier Category")
-    col1, col2, col3, col4 = st.columns(4)
-    # Initialize default
-    if 'search_terms' not in st.session_state:
-        st.session_state['search_terms'] = [
-            "Luxury wood furniture manufacturer",
-            "Premium wood furniture manufacturing",
-            "Custom wood furniture manufacturer"
+
+
+    supplier_category = st.selectbox(
+            "Select Supplier Category",
+            [
+                "Bespoke Furniture Supplier",
+                "Lighting Supplier",
+                "Drapery Supplier",
+                "Outdoor Furniture Supplier",
+                "Rugs Supplier"
+            ],
+            index=0
+        )
+
+    # Map selected category to search terms
+    category_to_terms = {
+        "Bespoke Furniture Supplier": [
+            "Bespoke furniture manufacturer",
+            "luxury woodwork manufacturer",
+            "Custom woodwork manufacturer",
+            "Premium furniture manufacturing",
+            "Custom furniture manufacturer"
+        ],
+        "Lighting Supplier": [
+            "Lighting supplier",
+            "Illumunation supplier",
+            "Illumunation manufacturer",
+            "Lighting manufacturer",
+            "Custom lighting manufacturer"
+        ],
+        "Drapery Supplier": [
+            "Drapery supplier",
+            "Curtain supplier",
+            "Curtain manufacturer",
+            "Drapery manufacturer",
+            "Custom drapery manufacturer"
+        ],
+        "Outdoor Furniture Supplier": [
+            "Outdoor furniture manufacturer",
+            "Exterior furniture supplier",
+            "Garden furniture supplier",
+            "Exterior furniture supplier",
+            "Patio furniture manufacturer",
+            "Custom outdoor furniture supplier"
+        ],
+        "Rugs Supplier": [
+            "Rug manufacturer",
+            "Rugs supplier",
+            "Carpet supplier",
+            "Carpet manufacturer",
+            "Custom Rug supplier"
         ]
-    with col1:
-        if st.button("Bespoke Furniture Supplier"):
-            st.session_state['search_terms'] = [
-                "Luxury wood furniture manufacturer",
-                "Premium wood furniture manufacturing",
-                "Custom wood furniture manufacturer"
-            ]
-    with col2:
-        if st.button("Lighting Supplier"):
-            st.session_state['search_terms'] = [
-                "Lighting supplier",
-                "Lighting manufacturer",
-                "Custom lighting manufacturer"
-            ]
-    with col3:
-        if st.button("Drapery Supplier"):
-            st.session_state['search_terms'] = [
-                "Drapery supplier",
-                "Drapery manufacturer",
-                "Custom drapery manufacturer"
-            ]
-    with col4:
-        if st.button("Outdoor Furniture Supplier"):
-            st.session_state['search_terms'] = [
-                "Outdoor furniture manufacturer",
-                "Patio furniture manufacturer",
-                "Custom outdoor furniture supplier"
-            ]
+    }
+
+    # Update session state
+    st.session_state['search_terms'] = category_to_terms[supplier_category]
 
     country = st.text_input("Enter the country")
     requirements = st.text_input("Enter any specific requirements (optional)")
@@ -374,8 +401,6 @@ elif search_mode == "Specific Company Search":
                     with st.spinner("Generating summary..."):
                         summary = generate_manufacturer_summary_from_content(specific_company, extracted_content)
                     st.subheader(f"Manufacturer: {specific_company}")
-                    #st.write(f"**Phone:** {phone}")
-                    #st.write(f"Location: {location}")
                     st.markdown(summary)
                     st.markdown("---")
         else:
