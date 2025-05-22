@@ -60,8 +60,11 @@ def extract_main_content(html):
 def extract_contact_details(html):
     emails = set()
     phones = set()
+    addresses_found = []
+
     soup = BeautifulSoup(html, "html.parser")
-    
+    text = soup.get_text(separator=' ', strip=True)  # Extract full text for regex-based address matching
+
     # Look for mailto links
     for a in soup.find_all("a", href=True):
         href = a["href"]
@@ -69,22 +72,35 @@ def extract_contact_details(html):
             email = href.split("mailto:")[1].split("?")[0].strip()
             if email:
                 emails.add(email)
-    
-    # Fallback: Use regex to find email patterns in the entire HTML
+
+    # Regex to find emails in the raw HTML
     email_regex = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
     found_emails = re.findall(email_regex, html)
     for email in found_emails:
         emails.add(email)
-    
+
     # Extract phone numbers
     phone_regex = r'(\+?\d[\d\s\-().]{7,}\d)'
     phone_matches = re.findall(phone_regex, html)
     for phone in phone_matches:
-        # Basic filtering to avoid dates and random numbers
         if len(re.sub(r'[\s\-().]+', '', phone)) >= 7:
             phones.add(phone.strip())
-        
-    return list(emails), list(phones)
+
+    # Address patterns
+    address_regex_patterns = [
+        r'\d{1,5}\s(?:[A-Za-z]+\s){1,4}(?:Street|St|Road|Rd|Avenue|Ave|Lane|Ln|Drive|Dr|Boulevard|Blvd|Place|Pl|Court|Ct)\.?,?\s*[A-Za-z\s]*,?\s*[A-Z]{2,3}\s*\d{5}(?:-\d{4})?',  # Street, City, State/Zip
+        r'(?:P\.O\.\s*Box|PO\s*Box)\s*\d+',  # P.O. Box
+        r'[A-Za-z\s]+(?:,\s*[A-Za-z\s]+){1,3}(?:,\s*[A-Z]{2,3})?(?:,\s*\d{4,6})?'  # City, State, Country, Postal Code
+    ]
+
+    # Extract addresses from plain text
+    for pattern in address_regex_patterns:
+        addresses_found.extend(re.findall(pattern, text, re.IGNORECASE))
+
+    addresses = list(set(addr.strip() for addr in addresses_found if addr.strip()))
+
+    return list(emails), list(phones), addresses
+
 
 # Find_relevant_links: Find anchor tags in the homepage whose text contains any given keywords.
 def find_relevant_links(home_html, base_url, keywords):
@@ -99,42 +115,52 @@ def find_relevant_links(home_html, base_url, keywords):
                 links[kw] = full_url
     return links
 # scrape_manufacturer_website: Scrape homepage and related pages (About, Products, Contact, etc.) and combine content.
+# scrape_manufacturer_website: Scrape homepage and related pages (About, Products, Contact, etc.) and combine content.
 def scrape_manufacturer_website(website_url):
     with st.spinner(f"Scraping website content from {website_url}..."):
         homepage_html = get_website_content(website_url)
         if not homepage_html:
             return "", [], []
-        
+
         homepage_content = extract_main_content(homepage_html)
         # Also extract emails from the homepage HTML
-        homepage_emails, homepage_phones = extract_contact_details(homepage_html)
-        
+        homepage_emails, homepage_phones, homepage_addresses = extract_contact_details(homepage_html) # Changed this line
+
         keywords = ['about', 'products', 'contact', 'contact us', 'services', 'portfolio', 'get in touch', 'inquiry', 'catalogue', 'company', 'profile', 'overview', 'Products & Services', 'Projects']
         relevant_links = find_relevant_links(homepage_html, website_url, keywords)
         extracted_content = {"Homepage": homepage_content}
-        
+
         all_emails = set(homepage_emails)
         all_phones = set(homepage_phones)
-        
+        all_addresses = set(homepage_addresses) # Added this line
+
         # Create a section for contact details if found on the homepage
-        if homepage_emails:
-            extracted_content["Contact Details"] = "Emails: " + ", ".join(homepage_emails)
-        
+        if homepage_emails or homepage_phones or homepage_addresses:
+            contact_details_section = ""
+            if homepage_emails:
+                contact_details_section += "Emails: " + ", ".join(homepage_emails) + "\n"
+            if homepage_phones:
+                contact_details_section += "Phones: " + ", ".join(homepage_phones) + "\n"
+            if homepage_addresses:
+                contact_details_section += "Addresses: " + ", ".join(homepage_addresses) + "\n"
+            extracted_content["Contact Details"] = contact_details_section
+
         for key, link in relevant_links.items():
             page_html = get_website_content(link)
             if page_html:
                 page_content = extract_main_content(page_html)
                 extracted_content[key.capitalize()] = page_content
-                
+
                 # Extract contact details from all pages
-                page_emails, page_phones = extract_contact_details(page_html)
+                page_emails, page_phones, page_addresses = extract_contact_details(page_html) # Changed this line
                 all_emails.update(page_emails)
                 all_phones.update(page_phones)
-                        
+                all_addresses.update(page_addresses) # Added this line
+
         combined_content = ""
         for section, content in extracted_content.items():
             combined_content += f"\n--- {section} ---\n{content}\n"
-        return combined_content, list(all_emails), list(all_phones)
+        return combined_content, list(all_emails), list(all_phones), list(all_addresses) # Changed this line
     
 # generate_manufacturer_summary_from_content: Use the LLM to generate a detailed summary.
 def generate_manufacturer_summary_from_content(company_name, extracted_content):
