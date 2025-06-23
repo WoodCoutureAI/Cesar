@@ -676,13 +676,13 @@ with analysis_tab:
         # Create columns for the header
         col1, col2, col3, col4 = st.columns([0.5, 0.15, 0.15, 0.2])
         with col1:
-            st.write("**Company Name**")
+           st.markdown("**Company Name**")
         with col2:
-            st.write("**Analyze**")
+           st.markdown("**Analyze**")
         with col3:
-            st.write("**Status**")
+            st.markdown("**Status**")
         with col4:
-            st.write("**Remove**")
+            st.markdown("**Remove**")
         
         st.markdown("---")
         
