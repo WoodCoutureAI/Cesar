@@ -759,7 +759,8 @@ with analysis_tab:
                 
                 # Display the analysis results
                 with st.expander("View Detailed Analysis", expanded=True):
-                    st.markdown("```\n" + st.session_state['analysis_results'][supplier_name] + "\n```")
+                    #st.markdown("```\n" + st.session_state['analysis_results'][supplier_name] + "\n```")
+                    st.markdown(analysis_result)
                 
                 if st.button("Back to Supplier List"):
                     if 'view_supplier_name' in st.session_state:
