@@ -13,8 +13,7 @@ Wood Couture's Cesar is a powerful tool for finding and analyzing furniture supp
 
 ## Requirements
 - Python 3.7+
-- Serper API key (for Google search)
-- OpenAI API key
+- Perplexity API key (for Google search)
 
 ## Installation
 
@@ -82,4 +81,5 @@ When deploying to Streamlit Cloud, add your API key to the Streamlit Cloud secre
 
 ## License
 [MIT License](LICENSE) 
+
 
