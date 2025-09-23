@@ -1,7 +1,7 @@
 # Cesar
 
 ## Overview
-Wood Couture's Cesar is a powerful tool for finding and analyzing furniture suppliers or manufacturers worldwide. It leverages Google search capabilities through the Serper API to extract comprehensive information about companies.
+Wood Couture's Cesar is a powerful tool for finding and analyzing furniture suppliers or manufacturers worldwide. It leverages Google search capabilities through the perplexity API to extract comprehensive information about companies.
 
 ## Features
 - **General Search**: Find companies based on country and specific requirements
@@ -35,9 +35,9 @@ mkdir -p .streamlit
 touch .streamlit/secrets.toml
 ```
 
-4. Add your Serper API and OpenAI API Key to the `secrets.toml` file:
+4. Add your perplexity Key to the `secrets.toml` file:
 ```toml
-SERPER_API_KEY = "your_serper_api_key_here"
+PERPLEXITY_API_KEY = "your_serper_api_key_here"
 ```
 
 ## Usage
@@ -82,3 +82,4 @@ When deploying to Streamlit Cloud, add your API key to the Streamlit Cloud secre
 
 ## License
 [MIT License](LICENSE) 
+
